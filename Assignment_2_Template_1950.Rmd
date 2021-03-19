@@ -1,0 +1,109 @@
+---
+title: "Assignment 2"
+author: "Luke Howard (s3846238)"
+subtitle: Deconstruct, Reconstruct Web Report
+output:
+  html_document: default
+  pdf_document: default
+urlcolor: blue
+---
+
+```{r setup, include=FALSE}
+# Do not change these settings!
+knitr::opts_chunk$set(warning = FALSE, message = FALSE)
+```
+
+### {.tabset} 
+
+Click the **Original**, **Code** and **Reconstruction** tabs to read about the issues and how they were fixed. 
+
+#### Original
+
+<br>
+<center>
+<img src="NSW CoronaVirusCases.png" width="80%">
+</center>
+<center>*Source: The Guardian Australia (2020) *</center>
+<br>
+
+**Objective**
+
+The objective of the original data set is to show the change in the number of corona virus cases over time from three different infection sources (locally, interstate and overseas). The main audience of this visualisation is residents of NSW as they would be the ones primarily concerned with the changes in the number of cases. Furthermore, concerned residents of Australia generally would also be interested in this visualisation as changes in NSW's numbers could potentially impact neighboring states.     
+
+The visualisation chosen had the following three main issues:
+
+* Issue 1: The main issue with this visualisation is that the number of cases for each infection source are stacked on-top of one another for each date. This makes it difficult to discern numbers for each type and draw comparisons between infection sources, especially on dates when numbers are low
+* Issue 2: Another issue with this data visualisation comes from the nature of the scale on the y-axis. Combining the three infection sources means that the high case numbers from overseas infections drastically increases the scale making it very difficult to see the changes in the smaller numbers of interstate infections.
+* Issue 3: The last main issue with the data visualisation is the colour choices made. The use of red and orange in the visualisation will make it potenitally difficult for people with colour blind conditions to differentiate between two of the infection sources. As this is visualisation has such a broad target audience this is a rather large oversight. 
+
+**Reference**
+
+* Evershed N (2020),'NSW and Sydney Covid trend Map: Where Coronavirus cases are rising and falling', The guardian Australia, August 31 2020, Available at https://www.theguardian.com/australia-news/datablog/ng-interactive/2020/aug/31/coronavirus-map-nsw-sydney-covid-19-cases-by-region-new-south-wales-case-numbers-data-graph-trend-rising-falling-corona-hotspots-areas-postcodes
+
+#### Code
+
+The following code was used to fix the issues identified in the original. 
+
+```{r}
+library(ggplot2)
+library(readr)
+library(dplyr)
+library(stringr)
+library(forcats)
+library(knitr)
+
+pal <- c("#27187eff","#a188a6ff","#85c7f2ff")
+background <- "#d1d1d1ff"
+background2 <- "#dbdbdbff"
+
+CVData <- read_csv("~/Desktop/RMIT SEM 2 2020/Data Visualisation/Assignment 2/assignment2template1950/NSWCoronaVirusData.csv")
+#Selecting relavent columns
+CVData <- CVData %>% select(notification_date,likely_source_of_infection, lhd_2010_name)
+
+#Changing notification date from character to date variable and factorising infection type
+CVData$notification_date <-  as.Date(CVData$notification_date)
+CVData$likely_source_of_infection <- CVData$likely_source_of_infection %>% as.factor()
+
+#grouping  by date of occurance to get total number of cases for the day
+CV_grp <- CVData %>% group_by(notification_date)
+CV_grp_Date <- CV_grp %>% summarise(totalCases = n())
+
+#same as above but also grouping by infection source
+CV_grp_date_source <- CVData %>% group_by(notification_date, likely_source_of_infection)
+CV_grp_date_source <- CV_grp_date_source %>% summarise(totalCases = n())
+
+#Combining the different types of locally acquired into one local infection source
+CV_grp_date_source$Infection_Source <-  ifelse(str_detect(CV_grp_date_source$likely_source_of_infection,"Locally"),"Locally Acquired",CV_grp_date_source$likely_source_of_infection)
+
+#relabelling factor for infection source
+CV_grp_date_source$Infection_Source <- CV_grp_date_source$Infection_Source %>% as.factor()
+CV_grp_date_source$Infection_Source <- CV_grp_date_source$Infection_Source%>% fct_recode("Overseas"="4","Interstate" = "1", "Locally Acquired" = "Locally Acquired")
+CV_grp_date_source$Infection_Source <- factor(CV_grp_date_source$Infection_Source, levels = c("Overseas","Locally Acquired","Interstate"))
+
+#Dropping original infection source column
+ CV_grp_date_source$likely_source_of_infection <- NULL
+
+#Plotting data
+Cases_Source <- ggplot(CV_grp_date_source, aes(x = notification_date, y = totalCases, fill = Infection_Source))
+
+p <- Cases_Source+geom_bar(stat = "identity")+facet_grid(Infection_Source~., scales = "free")+scale_x_continuous( labels = c("FEB-08","MAR-29","MAY-18","JUL-07","AUG-26"))
+
+p<- p+labs(y = " Number of cases", x = "Date", title = "Number of COVID-19 infections in NSW in 2020 by infection source", subtitle = "First wave was mostly from overseas sources, while second is mostly due to local transmission", caption = "Source: NSW Government (www.data.nsw.gov.au)")
+
+p <- p+theme(legend.position = "none",axis.text = element_text(), plot.background = element_rect(fill = background), panel.background = element_rect(fill = background2), title = element_text(face = "bold"), axis.text.x = element_text(), panel.grid = element_blank(), plot.subtitle = element_text(size = 10), plot.caption = element_text(size = 7, face = "italic") )
+
+p <- p+scale_fill_manual(values = pal)
+```
+
+**Data Reference**
+
+* NSW Government (2020), 'COVID-19 cases by notification date, location...', Data.NSW, August 31 2020, retrieved from: https://data.nsw.gov.au/data/dataset/nsw-covid-19-cases-by-location-and-likely-source-of-infection/resource/2776dbb8-f807-4fb2-b1ed-184a6fc2c8aa
+
+#### Reconstruction
+
+The following plot fixes the main issues in the original.
+
+```{r fig.align="center", echo = FALSE}
+p
+```
+

@@ -1,0 +1,246 @@
+---
+title: "The FIFA 2018 World Cup at A Glance"
+output: 
+  flexdashboard::flex_dashboard:
+    orientation: columns
+    vertical_layout: fill
+    theme: cerulean
+---
+
+```{r setup, include=FALSE}
+library(flexdashboard)
+library(dplyr)
+library(plotly)
+library(ggplot2)
+library(lubridate)
+library(tidyr)
+library(readr)
+
+#colours to be used
+pal = c("#780116ff","#083d77ff","#d8572aff","#3e92ccff","#c32f27ff")
+pal2 = c("#083d77ff","#780116ff")
+background <- "#d1d1d1ff"
+background2 <- "#dbdbdbff"
+
+#Preprocessing of world cup teams data set
+worldcup_teams <- read_csv("~/Desktop/RMIT SEM 2 2020/Data Visualisation/Assignment 3/2018_worldcup_v3.csv")
+worldcup_teams <- worldcup_teams %>% separate(Datetime, into = c("Date", "Time"), sep = "-")
+worldcup_teams$Date <- worldcup_teams$Date %>% parse_date_time(orders = "dmy")
+#Selecting required variables into new dataframe
+WC_teams <- worldcup_teams %>% select(Date, Stage, `Home Team Name`, `Home Team Goals`, `Away Team Name`, 
+                                      `Away Team Goals`)
+
+#group by team to find the most goals by team
+WC_grp_goals <- WC_teams %>% group_by(`Home Team Name`, `Away Team Name`)
+WC_grp_goals <- WC_grp_goals %>% summarise("total Home goals" = sum(`Home Team Goals`),
+                                           "total Away goals" = sum(`Away Team Goals`))
+
+#Filtering out home goals to group by team before adding back with away goals to get total goals scored by team
+WC_Home_goals <- WC_grp_goals %>% select(`Home Team Name`, `total Home goals`)
+WC_Home_goals <- WC_Home_goals %>% group_by(`Home Team Name`) %>% summarise(totalGoals = sum(`total Home goals`))
+WC_away_goals <- WC_grp_goals %>% select(`Away Team Name`, `total Away goals`)
+WC_away_goals$`Home Team Name` <- NULL
+WC_away_goals <- WC_away_goals %>% group_by(`Away Team Name`) %>% summarise(totalGoals = sum(`total Away goals`))
+
+#renaming team variable to make key to join by
+names(WC_Home_goals)[names(WC_Home_goals)=="Home Team Name"] <- "TeamName"
+names(WC_away_goals)[names(WC_away_goals)=="Away Team Name"] <- "TeamName"
+
+CountryGoals <- WC_Home_goals %>% left_join(WC_away_goals, by = "TeamName")
+CountryGoals$TotalGoals <- CountryGoals$totalGoals.x+CountryGoals$totalGoals.y
+CountryGoals$totalGoals.x <- NULL
+CountryGoals$totalGoals.y <- NULL
+
+#creating goals Conceded data set
+home_goals_Conceded <- WC_grp_goals %>%  select(`Home Team Name`, `total Away goals`)
+home_goals_Conceded <- home_goals_Conceded %>%  group_by(`Home Team Name`) %>% 
+  summarise(GoalsConceded = sum(`total Away goals`))
+
+away_goals_Conceded <- WC_grp_goals %>% select(`Away Team Name`, `total Home goals`)
+away_goals_Conceded <- away_goals_Conceded %>% group_by(`Away Team Name`) %>%
+  summarise(goalsConceded = sum(`total Home goals`))
+
+names(home_goals_Conceded)[names(home_goals_Conceded)=="Home Team Name"] <- "TeamName"
+names(away_goals_Conceded)[names(away_goals_Conceded)=="Away Team Name"] <- "TeamName"
+
+CountryGoalsConceded <-home_goals_Conceded  %>% left_join(away_goals_Conceded, by = "TeamName")
+CountryGoalsConceded$TotalConceded <- CountryGoalsConceded$GoalsConceded + CountryGoalsConceded$goalsConceded
+CountryGoalsConceded$GoalsConceded <- NULL
+CountryGoalsConceded$goalsConceded <- NULL
+
+#combining goals scored and goals Conceded 
+Scored_Conceded <- CountryGoals %>% left_join(CountryGoalsConceded, by = "TeamName")
+
+#creating goals scored to goals Conceded ratio
+Scored_Conceded$goalRatio <- round(Scored_Conceded$TotalGoals/Scored_Conceded$TotalConceded,2)
+
+#creating region variable for each country
+Asia <- c("IR Iran", 'Japan', "Korea Republic", "Russia", "Saudi Arabia") %>% as.list()
+Oceania <- c("Australia") %>% as.list()
+Europe <- c("Belgium","Croatia","Denmark","England","France","Germany","Iceland", "Portugal","Serbia","Spain",
+            "Sweden", "Switzerland", "Poland") %>% as.list()
+Americas <- c("Argentina","Brazil","Colombia", "Costa Rica", "Mexico","Panama", "Uruguay","Peru") %>% as.list()
+Africa <- c("Egypt","Morocco","Nigeria","Senegal","Tunisia") %>% as.list()
+Scored_Conceded$Region <- NA
+Scored_Conceded$Region <- ifelse(Scored_Conceded$TeamName %in% Asia, "Asia", Scored_Conceded$Region)
+Scored_Conceded$Region <- ifelse(Scored_Conceded$TeamName %in% Africa, "Africa", Scored_Conceded$Region)
+Scored_Conceded$Region <- ifelse(Scored_Conceded$TeamName %in% Americas, "Americas", Scored_Conceded$Region)
+Scored_Conceded$Region <- ifelse(Scored_Conceded$TeamName %in% Europe, "Europe", Scored_Conceded$Region)
+Scored_Conceded$Region <- ifelse(Scored_Conceded$TeamName %in% Oceania, "Oceania", Scored_Conceded$Region)
+#making goals Conceded negative to be able to plot alongside goals scored and then gathering data
+Scored_Conceded2 <- Scored_Conceded
+Scored_Conceded2$TotalConceded <- Scored_Conceded2$TotalConceded*-1
+Scored_Conceded2 <- Scored_Conceded2 %>% gather(TotalGoals, TotalConceded, key = "GoalType", value = "Goals")
+
+#LOADING PLAYERS DATASET 
+PlayerGoals <- read_csv("~/Desktop/RMIT SEM 2 2020/Data Visualisation/Assignment 3/PlayerGoals.csv")
+PlayerGoals <- PlayerGoals %>% select(Home,Away,Scorer,Type,FinalResult, ScoringTeam)
+
+#LOADING TEAM PERFORMANCE DATASET
+teamStats <- read_csv("~/Desktop/RMIT SEM 2 2020/Data Visualisation/Assignment 3/world_cup_2018_stats.csv")
+teamStats <- teamStats %>% select(Team, Attempts, `On-Target`, `Distance Covered km`, Tackles, `Yellow cards`,
+                                  `Red Cards`, `Fouls Committed`,`Second Yellow Card leading to Red Card`)
+```
+
+
+Goals Breakdown
+===================================== 
+
+Column {data-width=750}
+-----------------------------------------------------------------------
+
+### Goals Scored By Country {.no-padding}
+
+```{r}
+p1 <- ggplot(data = Scored_Conceded2, aes(x = reorder(TeamName,Goals), y = Goals, fill = GoalType))
+p1 <- p1 + geom_bar(stat = "identity")+coord_flip()
+p1 <- p1 + scale_y_continuous(breaks = c(-10,10), labels = c("10","10"))
+p1 <- p1 + scale_fill_manual(values = c("#780116ff","#083d77ff"),labels = c("Goals Conceded","Goals Scored"))
+p1 <- p1 + labs(x = "Country", y = "Number of goals", fill = "Goal Type", caption = "Based on data from Kaggle.com (Ghari M 2020)")
+p1 <- p1 + theme( panel.background = element_rect(fill = background2), axis.text.x = element_text(), plot.caption = element_text(size = 7, face = "italic"))
+p1
+
+```
+
+
+Column {data-width=850}
+-----------------------------------------------------------------------
+
+### Goals Scored and Conceded By Region
+
+```{r}
+#preprocessing performed in initial set up chunk
+p3 <- plot_ly(data = Scored_Conceded, x = ~TotalGoals, y = ~TotalConceded, color = ~factor(Region),
+              colors = pal , size = ~goalRatio,
+              text = ~paste("Team: ", TeamName, "<br>Goal Ratio: ", goalRatio))
+p3 <- p3 %>% layout(xaxis = list(title = "Goals Scored"), yaxis = list(title = "Goals conceded"))
+p3
+```
+
+Column {data-width=750}
+-----------------------------------------------------------------------
+
+### How Regions Scored Their Goals
+
+```{r}
+Scored_Conceded$TeamName <- ifelse(Scored_Conceded$TeamName == "IR Iran", "Iran",Scored_Conceded$TeamName)
+Scored_Conceded$TeamName <- ifelse(Scored_Conceded$TeamName == "Korea Republic", "South Korea",Scored_Conceded$TeamName) 
+names(PlayerGoals)[names(PlayerGoals)=="ScoringTeam"] <- "TeamName"
+Team_Scoring <- Scored_Conceded %>% right_join(PlayerGoals, by = 'TeamName') 
+Team_Scoring <- Team_Scoring %>% select(Type, Region)
+Team_Scoring$Goals <- 1 
+Team_Scoring <- Team_Scoring %>% group_by(Type, Region) %>% summarise(Total = sum(Goals))
+
+p4 <- ggplot(data = Team_Scoring, aes(x = Region, y = Total, fill = Type))
+p4 <- p4 + geom_bar(stat = "identity", position = "fill")
+p4 <- p4 + scale_fill_manual(values = pal, labels = c("FreeKick", "Inside Penaly Box","Outside Penalty Box", "Own Goal","Penalty"))+labs(y = "Proportion of Goals Scored", caption = "Based on data from Kaggle.com (Šikić F 2020)")
+p4 <- p4 + theme( panel.background = element_rect(fill = background2), axis.text.x = element_text(), plot.caption = element_text(size = 7, face = "italic"), panel.grid = element_blank())
+p4
+```
+
+### Golden Boot (Most Goals Scored by Single Player)
+
+```{r}
+names(WC_teams)[names(WC_teams)=="Home Team Name"] <- "Home"
+names(WC_teams)[names(WC_teams)=="Away Team Name"] <- "Away"
+PlayerGoals2 <- PlayerGoals %>% right_join(WC_teams, by = c("Home", "Away"))
+PlayerGoals2$`Home Team Goals` <- NULL
+PlayerGoals2$`Away Team Goals`<- NULL
+PlayerGoals2$Goals <- 1
+PlayerGoals2 <- PlayerGoals2 %>% group_by(Scorer)
+PlayerGoals2 <- PlayerGoals2 %>% summarise(GoalsScored = sum(Goals))
+PlayerGoals2 <- PlayerGoals2 %>% filter(!is.na(Scorer))
+PlayerGoals2 <- PlayerGoals2[order(PlayerGoals2$GoalsScored, decreasing = TRUE),]
+PlayerGoals2 <- PlayerGoals2 %>% head(25)
+
+p2 <- ggplot(data = PlayerGoals2, aes(x = reorder(Scorer, GoalsScored), y = GoalsScored,
+             fill = ifelse(Scorer == "Kane","A","B")))
+p2 <- p2 + geom_bar(stat = "identity", show.legend = FALSE)+coord_flip()+
+  scale_fill_manual(values = c("#780116ff","#083d77ff"))
+p2 <- p2 + labs(y = "Total Goals Scored", x = "Player Last Name", caption = "Based on Data from kaggle.com (Šikić F 2020)")
+p2 <- p2 + theme(panel.background = element_rect(fill = background2), axis.text.x = element_text(), plot.caption = element_text(size = 7, face = "italic"))
+p2
+```
+
+Team Performance
+===================================== 
+
+Column {data-width=750}
+-----------------------------------------------------------------------
+
+### Distance Covered By Country across tournament
+```{r}
+Distance <- teamStats %>% group_by(Team) %>% summarise('Total Distance (Km)'= sum(`Distance Covered km`))
+
+p6 <- ggplot(data = Distance, aes (x = Team, y = `Total Distance (Km)`, 
+             fill = ifelse(Team == "France" | Team == "Croatia","A","B")))
+p6 <- p6 + geom_bar(stat = "identity", show.legend = FALSE)+scale_fill_manual(values = c("#780116ff","#083d77ff"))
+p6 <- p6 + theme( panel.background = element_rect(fill = background2), plot.caption = element_text(size = 7, face = "italic"), axis.text.x = element_text(angle = 90),axis.title.x = element_blank(),)
+p6 <- p6+labs(subtitle = "Finalists are highlighted in red", y = "Total Distance Covered (Km)", caption = "Based on data from GITHUB.com (2020)")
+p6
+```
+
+### Fouls and Yellow Cards Committed by Country
+```{r}
+Fouls <- teamStats %>% group_by(Team) %>% summarise(YellowCards = sum(`Yellow cards`),
+                                                    Fouls = sum (`Fouls Committed`))
+Fouls <- Fouls %>%  gather(YellowCards, Fouls, key = "FoulType", value = "NumberComiited")
+Fouls$FoulType <- Fouls$FoulType %>% factor(levels = c("Fouls","YellowCards"), labels = c("Fouls",
+                                                                                          "Yellow Cards"))
+
+p7 <- ggplot(data = Fouls, aes(x = Team, y = NumberComiited, fill = FoulType))
+p7 <- p7 + geom_bar(stat = "identity", position = "dodge", show.legend = FALSE)+facet_grid(FoulType~.,scales = "free")
+p7 <- p7 + scale_fill_manual(values = c("#083d77ff","#F4BC1C"))
+p7 <- p7 + labs(y = "Total Number Committed", caption = "Based on data from GITHUB.com (2018)")
+p7 <- p7 + theme( panel.background = element_rect(fill = background2), plot.caption = element_text(size = 7, face = "italic"), axis.text.x = element_text(angle = 90),axis.title.x = element_blank())
+p7
+```
+
+Column {data-width=750}
+-----------------------------------------------------------------------
+
+### Shots taken versus shots on target
+```{r message=FALSE, warning=FALSE}
+shotAccuracy <- teamStats %>% group_by(Team) %>% summarise(Total.Taken = sum(Attempts),
+                                                           On.Target = sum(`On-Target`))
+shotAccuracy <- shotAccuracy %>% mutate(Accuracy = (On.Target/Total.Taken)*100)
+
+p8 <- plot_ly(data = shotAccuracy, x = ~Total.Taken, y = ~On.Target, color = ~Accuracy,
+              text = ~paste("Team: ", Team, "<br>Accuracy: ", Accuracy),
+              colors = pal2,
+              marker = list(size = 10,
+                            opacity = 0.8))
+p8 <- p8 %>% layout(xaxis = list(title = "Total Shots"), yaxis = list(title = "Shots on target"))
+p8
+```
+
+
+References
+===================================== 
+**References**
+ 
+ * Ghari M 2020, "FIFA World Cup 2018: 2018 FIFA World Cup that was held in Russia, based on FIFA official website.", Retrieved on 16/10/2020, https://www.kaggle.com/rezaghari/fifa-worldcup-2018
+ 
+ * Šikić F 2020, FIFA World Cup 2018 Goals: Every goal and goalscorer from FIFA WC 2018 with additional information, Retrieved on 16/10/2020, https://www.kaggle.com/frankosikic/fifa-world-cup-2018-goals
+ 
+ * DH 2018, "2018-world-cup-stats", Retrieved 21/10/2020 https://gitlab.com/djh_or/2018-world-cup-stats/-/blob/master/world_cup_2018_stats.csv
